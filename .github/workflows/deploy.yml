@@ -20,6 +20,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Debug secret length
+        run: |
+          echo "Length of AWS_DEPLOY_ROLE_ARN secret: ${#ARN}"
+        env:
+          ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -29,7 +35,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Install AWS SAM CLI
         run: pip install aws-sam-cli
