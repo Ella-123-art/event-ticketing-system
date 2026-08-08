@@ -1,0 +1,214 @@
+# Event Registration & Ticketing System
+
+A serverless REST API that replaces Microsoft Forms + Excel for event
+registration, built entirely on AWS managed services.
+
+Capstone project — Azubi Africa AWS Cloud Engineering Programme.
+
+## Live Demo
+
+**API Base URL:** `https://xqga6ovdbb.execute-api.us-east-1.amazonaws.com/dev`
+
+```bash
+curl https://xqga6ovdbb.execute-api.us-east-1.amazonaws.com/dev/events
+```
+
+## Problem
+
+Manual event registration using Forms + Excel doesn't scale: no real-time
+capacity tracking, no automated confirmations, no audit trail, and no way
+to query a participant's registrations. This project replaces that process
+with a serverless API that is cheap to run (pay-per-use, Free Tier eligible),
+scales automatically, and is fully defined as code.
+
+## Architecture
+                ┌─────────────────┐
+
+GitHub ───push──▶ GitHub Actions │ (test + deploy via OIDC)
+└────────┬─────────┘
+│ sam deploy
+▼
+Client ──HTTPS──▶ API Gateway (REST) ──▶ Lambda (Python 3.13) ──▶ DynamoDB
+│ │
+│ └──▶ SNS (confirmation email)
+▼
+CloudWatch (Logs, Metrics, Alarms)
+
+
+**Services used:** API Gateway, AWS Lambda, DynamoDB, SNS, CloudWatch,
+IAM, GitHub Actions, AWS SAM.
+
+## API Endpoints
+
+| Method | Path                       | Description                          |
+|--------|----------------------------|---------------------------------------|
+| POST   | `/register`                | Register for an event                 |
+| GET    | `/events`                  | List all events (optional `?status=`) |
+| GET    | `/registrations/{email}`   | View a participant's registrations    |
+| DELETE | `/registration/{id}`       | Cancel a registration                 |
+
+### Example requests
+
+**Register**
+```bash
+curl -X POST https://xqga6ovdbb.execute-api.us-east-1.amazonaws.com/dev/register \
+  -H "Content-Type: application/json" \
+  -d '{"eventId":"evt-001","name":"Ella Martey","email":"ella@example.com"}'
+```
+
+**List events**
+```bash
+curl https://xqga6ovdbb.execute-api.us-east-1.amazonaws.com/dev/events
+```
+
+**View a participant's registrations**
+```bash
+curl https://xqga6ovdbb.execute-api.us-east-1.amazonaws.com/dev/registrations/ella@example.com
+```
+
+**Cancel a registration**
+```bash
+curl -X DELETE https://xqga6ovdbb.execute-api.us-east-1.amazonaws.com/dev/registration/<registrationId>
+```
+
+## Data Model
+
+**EventsTable** — partition key `eventId`
+| Field    | Type   |
+|----------|--------|
+| eventId  | String |
+| name     | String |
+| date     | String |
+| location | String |
+| capacity | Number |
+| status   | String (`AVAILABLE` \| `LIMITED` \| `SOLD_OUT`) |
+
+**RegistrationsTable** — partition key `registrationId`, GSI `email-index` on `email`
+| Field          | Type   |
+|----------------|--------|
+| registrationId | String |
+| eventId        | String |
+| email          | String |
+| name           | String |
+| status         | String (`CONFIRMED` \| `CANCELLED`) |
+| createdAt      | String (ISO 8601) |
+
+## Repository Structure
+
+event-ticketing-system/
+├── template.yaml # AWS SAM infrastructure-as-code
+├── samconfig.toml # Default sam deploy parameters
+├── requirements.txt # Lambda runtime dependencies
+├── src/
+│ ├── register.py # POST /register
+│ ├── list_events.py # GET /events
+│ ├── get_registrations.py # GET /registrations/{email}
+│ ├── cancel_registration.py # DELETE /registration/{id}
+│ └── common/response.py # Shared CORS/response helpers
+├── scripts/seed_events.py # Loads sample events into DynamoDB
+├── tests/test_lambdas.py # Unit tests (moto-mocked AWS)
+└── .github/workflows/
+├── test.yml # Runs on every push/PR
+└── deploy.yml # Deploys to AWS on push to main
+
+
+## Prerequisites
+
+- AWS account (Free Tier is sufficient)
+- AWS CLI configured (`aws configure`)
+- AWS SAM CLI
+- Python 3.13
+- A GitHub repository (for CI/CD)
+
+## Phase 1 — Infrastructure Foundation
+
+The infrastructure is defined entirely in `template.yaml` using AWS SAM,
+which compiles down to CloudFormation. It provisions:
+
+- An **API Gateway** REST API with CORS enabled
+- **4 Lambda functions**, one per endpoint, each scoped to the exact
+  DynamoDB/SNS permissions it needs (least privilege — see IAM section)
+- **2 DynamoDB tables** on-demand billing (pay-per-request, Free Tier friendly)
+- An **SNS topic** for confirmation emails
+- **CloudWatch alarms** for error rate and duration
+
+Deploy it locally with the guided flow:
+
+```bash
+sam build
+sam deploy --guided
+```
+
+## Phase 2 — API Development
+
+Each endpoint is an isolated Lambda function under `src/`:
+
+- **`register.py`** — validates the payload (required fields, email format,
+  length limits), confirms the event exists and isn't sold out, writes a
+  conditional put to prevent duplicate registrations, and publishes a
+  best-effort SNS confirmation.
+- **`list_events.py`** — scans (paginated) the events table, with an
+  optional `?status=` filter.
+- **`get_registrations.py`** — queries the `email-index` GSI so lookups by
+  email don't require a full table scan.
+- **`cancel_registration.py`** — soft-deletes by flipping `status` to
+  `CANCELLED` rather than removing the record, preserving the audit trail.
+
+Seed the events table with sample data after deploy:
+
+```bash
+python scripts/seed_events.py <events-table-name> --region us-east-1
+```
+
+## Phase 3 — Automation & CI/CD
+
+Two GitHub Actions workflows live in `.github/workflows/`:
+
+- **`test.yml`** — runs on every push and PR. Installs dependencies, runs
+  the `pytest` suite (DynamoDB and SNS mocked with `moto`), and lints with
+  `flake8`.
+- **`deploy.yml`** — runs on push to `main`. Calls `test.yml` as a
+  reusable workflow first (deploy is blocked if tests fail), then
+  authenticates to AWS via **OIDC** and runs `sam build && sam deploy`.
+
+## Phase 4 — Monitoring & Security
+
+- **CloudWatch Logs** on every Lambda (`/aws/lambda/<function-name>`)
+- **CloudWatch Alarms** — API 5xx error rate, Lambda errors, Lambda duration
+- **X-Ray tracing** enabled on all functions
+- **IAM least privilege** — scoped SAM policy templates per function, not
+  one shared role
+- **Input validation** on every endpoint
+
+## Phase 5 — Deployment & Cost Optimisation
+
+- **On-demand DynamoDB billing** — pay per request, Free Tier friendly
+- **Lambda memory tuned to 128 MB**
+- **Reusable CI workflow** — `deploy.yml` calls `test.yml` instead of
+  duplicating steps
+
+### Tearing everything down
+
+```bash
+sam delete --stack-name event-ticketing-system
+```
+
+## Running Tests Locally
+
+```bash
+pip install -r requirements.txt -r tests/requirements-test.txt
+pytest tests/ -v
+```
+
+## Roadmap / Possible Extensions
+
+- Cognito-based auth so `/registrations/{email}` only returns the caller's
+  own data
+- A small static front-end (S3 + CloudFront) calling this API
+- DynamoDB Streams → Lambda to auto-flip `status` to `SOLD_OUT` at capacity
+- API keys + usage plans for rate-limited public access
+
+## Author
+
+**Emmanuella Odetsi Martey**
+Azubi Africa AWS Cloud Engineering Programme
