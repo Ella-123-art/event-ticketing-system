@@ -1,0 +1,238 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Event Registration & Ticketing System — a serverless REST API replacing
+  Microsoft Forms + Excel, built on API Gateway, Lambda, and DynamoDB.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+  NotificationEmail:
+    Type: String
+    Default: ""
+    Description: Optional email address to subscribe to the SNS confirmation topic.
+
+Conditions:
+  HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, ""]]
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Timeout: 10
+    MemorySize: 128
+    Environment:
+      Variables:
+        EVENTS_TABLE: !Ref EventsTable
+        REGISTRATIONS_TABLE: !Ref RegistrationsTable
+        SNS_TOPIC_ARN: !Ref RegistrationTopic
+    Tracing: Active
+
+Resources:
+  # ---------------------------------------------------------------------
+  # API Gateway
+  # ---------------------------------------------------------------------
+  TicketingApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Stage
+      Cors:
+        AllowMethods: "'GET,POST,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+        AllowOrigin: "'*'"
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          ThrottlingBurstLimit: 20
+          ThrottlingRateLimit: 10
+
+  # ---------------------------------------------------------------------
+  # Lambda functions
+  # ---------------------------------------------------------------------
+  RegisterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-register"
+      CodeUri: src/
+      Handler: register.handler
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref EventsTable }
+        - DynamoDBWritePolicy: { TableName: !Ref RegistrationsTable }
+        - SNSPublishMessagePolicy: { TopicName: !GetAtt RegistrationTopic.TopicName }
+      Events:
+        Register:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /register
+            Method: POST
+
+  ListEventsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-list-events"
+      CodeUri: src/
+      Handler: list_events.handler
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref EventsTable }
+      Events:
+        ListEvents:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /events
+            Method: GET
+
+  GetRegistrationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-get-registrations"
+      CodeUri: src/
+      Handler: get_registrations.handler
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref RegistrationsTable }
+      Events:
+        GetRegistrations:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /registrations/{email}
+            Method: GET
+
+  CancelRegistrationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-cancel-registration"
+      CodeUri: src/
+      Handler: cancel_registration.handler
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref RegistrationsTable }
+      Events:
+        CancelRegistration:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /registration/{id}
+            Method: DELETE
+
+  # ---------------------------------------------------------------------
+  # DynamoDB tables
+  # ---------------------------------------------------------------------
+  EventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-events"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: eventId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: eventId
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  RegistrationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-registrations"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: registrationId
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: registrationId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: email-index
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # ---------------------------------------------------------------------
+  # Notifications
+  # ---------------------------------------------------------------------
+  RegistrationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${AWS::StackName}-confirmations"
+
+  RegistrationTopicSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasNotificationEmail
+    Properties:
+      TopicArn: !Ref RegistrationTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  # ---------------------------------------------------------------------
+  # Monitoring
+  # ---------------------------------------------------------------------
+  ApiErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-api-5xx-error-rate"
+      AlarmDescription: Triggers when the API's 5xx error rate exceeds 5%.
+      Namespace: AWS/ApiGateway
+      MetricName: 5XXError
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub "${AWS::StackName}"
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0.05
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  RegisterFunctionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-register-lambda-errors"
+      AlarmDescription: Triggers if the register Lambda throws errors.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref RegisterFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  RegisterFunctionDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-register-lambda-duration"
+      AlarmDescription: Triggers if the register Lambda runs close to its timeout.
+      Namespace: AWS/Lambda
+      MetricName: Duration
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref RegisterFunction
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 8000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  ApiBaseUrl:
+    Description: Base URL of the deployed API
+    Value: !Sub "https://${TicketingApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}"
+  EventsTableName:
+    Value: !Ref EventsTable
+  RegistrationsTableName:
+    Value: !Ref RegistrationsTable
+  SNSTopicArn:
+    Value: !Ref RegistrationTopic

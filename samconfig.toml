@@ -1,0 +1,14 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "event-ticketing-system"
+resolve_s3 = true
+s3_prefix = "event-ticketing-system"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+parameter_overrides = "Stage=\"dev\" NotificationEmail=\"ellamartey1@gmail.com\""
+image_repositories = []
+
+[default.global.parameters]
+region = "us-east-1"
