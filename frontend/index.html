@@ -477,8 +477,9 @@ regForm.addEventListener("submit", async (e) => {
     document.getElementById("cEvent").textContent = selectedEvent.name || selectedEvent.eventId;
     document.getElementById("cName").textContent = payload.name;
     document.getElementById("cEmail").textContent = payload.email;
-    document.getElementById("cId").textContent = data.registrationId || data.id || "—";
-    document.getElementById("cStatus").textContent = statusLabel(data.status || "CONFIRMED");
+    const reg = data.registration || data;
+    document.getElementById("cId").textContent = reg.registrationId || reg.id || "—";
+    document.getElementById("cStatus").textContent = statusLabel(reg.status || "CONFIRMED");
 
     formState.style.display = "none";
     confirmState.classList.add("show");
