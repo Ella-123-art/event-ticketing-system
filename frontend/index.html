@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Event Ticketing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#0F1B2D;
+    --paper:#FFFFFF;
+    --paper-dim:#F3F1EC;
+    --ink:#182233;
+    --muted:#6B7280;
+    --stamp:#D2491F;
+    --stamp-dark:#A63712;
+    --good:#1E8E5A;
+    --good-bg:#E7F5EE;
+    --bad:#C0392B;
+    --bad-bg:#FBEAE8;
+    --line:#D8D3C6;
+    --focus:#2F6FED;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    min-height:100vh;
+    background:
+      radial-gradient(1200px 600px at 15% -10%, #1B3153 0%, transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, #1B3153 0%, transparent 55%),
+      var(--navy);
+    font-family:'Inter', sans-serif;
+    color:var(--ink);
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+    padding:56px 20px 80px;
+  }
+  .wrap{ width:100%; max-width:920px; }
+  .eyebrow{
+    display:flex; align-items:center; gap:10px;
+    color:#9FB4D6; font-family:'Space Mono', monospace; font-size:12px;
+    letter-spacing:.18em; text-transform:uppercase; margin-bottom:14px;
+  }
+  .eyebrow .dot{ width:7px;height:7px;border-radius:50%; background:var(--stamp); box-shadow:0 0 0 3px rgba(210,73,31,0.25); }
+  h1{
+    font-family:'Archivo Black', sans-serif; color:#fff;
+    font-size:clamp(28px, 4vw, 40px); line-height:1.05; margin:0 0 10px; letter-spacing:-0.01em;
+  }
+  .sub{ color:#B7C4DA; font-size:15px; max-width:600px; margin:0 0 28px; line-height:1.5; }
+
+  /* Tabs */
+  .tabs{
+    display:flex; gap:8px; margin-bottom:18px;
+  }
+  .tab-btn{
+    flex:1;
+    padding:12px 14px;
+    background:#152845;
+    border:1.5px solid #223A5E;
+    color:#B7C4DA;
+    font-family:'Inter', sans-serif;
+    font-weight:600;
+    font-size:13.5px;
+    border-radius:10px 10px 0 0;
+    cursor:pointer;
+    transition:background .15s ease, color .15s ease;
+  }
+  .tab-btn.active{
+    background:var(--paper);
+    color:var(--ink);
+    border-color:var(--paper);
+  }
+  .tab-btn:not(.active):hover{ background:#1B3153; color:#fff; }
+
+  .panel{
+    display:none;
+    background:var(--paper);
+    border-radius:0 14px 14px 14px;
+    box-shadow: 0 30px 60px -20px rgba(0,0,0,0.55);
+  }
+  .panel.active{ display:grid; grid-template-columns:1fr 250px; }
+  @media (max-width:720px){
+    .panel.active{ grid-template-columns:1fr; }
+  }
+
+  .main{ padding:34px 38px 32px; }
+  .stub{
+    padding:32px 24px;
+    background: repeating-linear-gradient(180deg, transparent 0 10px, rgba(0,0,0,0.035) 10px 11px), var(--paper-dim);
+    border-left:2px dashed var(--line);
+    display:flex; flex-direction:column;
+  }
+  @media (max-width:720px){ .stub{ border-left:none; border-top:2px dashed var(--line); } }
+
+  .kicker{
+    font-family:'Space Mono', monospace; font-size:11px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--stamp); font-weight:700; margin-bottom:6px;
+  }
+  h2{ font-size:19px; margin:0 0 4px; font-weight:700; }
+  .hint{ color:var(--muted); font-size:13px; margin:0 0 22px; }
+  .hint code{ background:#F3F1EC; padding:1px 5px; border-radius:4px; }
+
+  /* events list (register tab) */
+  .events{ display:flex; flex-direction:column; gap:10px; margin-bottom:24px; }
+  .event-card{
+    border:1.5px solid var(--line); border-radius:12px; padding:14px 16px;
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    cursor:pointer; transition:border-color .15s ease, background .15s ease;
+  }
+  .event-card:hover{ border-color:#B9C3D6; }
+  .event-card.selected{ border-color:var(--stamp); background:#FDF3EE; }
+  .event-card input{ display:none; }
+  .event-main{ display:flex; flex-direction:column; gap:3px; }
+  .event-name{ font-weight:700; font-size:14.5px; }
+  .event-meta{ font-size:12.5px; color:var(--muted); font-family:'Space Mono', monospace; }
+  .status-pill{
+    font-family:'Space Mono', monospace; font-size:10.5px; font-weight:700; letter-spacing:.06em;
+    padding:4px 9px; border-radius:999px; white-space:nowrap; text-transform:uppercase;
+  }
+  .status-AVAILABLE{ background:var(--good-bg); color:var(--good); }
+  .status-LIMITED{ background:#FFF3DE; color:#9A6A00; }
+  .status-SOLD_OUT{ background:var(--bad-bg); color:var(--bad); }
+  .status-CONFIRMED{ background:var(--good-bg); color:var(--good); }
+  .status-CANCELLED{ background:var(--bad-bg); color:var(--bad); }
+  .empty-events, .loading-events{ font-size:13px; color:var(--muted); padding:14px 0; }
+
+  form .field{ margin-bottom:16px; }
+  label{ display:block; font-size:12.5px; font-weight:600; margin-bottom:6px; color:#3A4356; }
+  input[type=text], input[type=email]{
+    width:100%; padding:11px 13px; border:1.5px solid var(--line); border-radius:9px;
+    font-size:14px; font-family:'Inter', sans-serif; color:var(--ink); background:#fff;
+    transition:border-color .15s ease, box-shadow .15s ease;
+  }
+  input:focus{ outline:none; border-color:var(--focus); box-shadow:0 0 0 3px rgba(47,111,237,0.15); }
+  input.invalid{ border-color:var(--bad); }
+  .field-error{ font-size:12px; color:var(--bad); margin-top:5px; display:none; }
+  .field-error.show{ display:block; }
+
+  .btn{
+    width:100%; padding:13px 16px; background:var(--stamp); color:#fff; border:none;
+    border-radius:9px; font-size:14.5px; font-weight:700; font-family:'Inter', sans-serif;
+    cursor:pointer; letter-spacing:.01em; transition:background .15s ease, transform .05s ease;
+  }
+  .btn:hover{ background:var(--stamp-dark); }
+  .btn:active{ transform:translateY(1px); }
+  .btn:disabled{ background:#C7BFB2; cursor:not-allowed; }
+  .btn-outline{
+    background:none; border:1.5px solid var(--line); color:var(--ink);
+  }
+  .btn-outline:hover{ background:#F7F5F0; border-color:#B9C3D6; }
+  .btn-danger{ background:var(--bad); }
+  .btn-danger:hover{ background:#9C2A1D; }
+  .btn-sm{ width:auto; padding:8px 14px; font-size:12.5px; }
+
+  .alert{
+    font-size:13px; padding:11px 13px; border-radius:9px; margin-bottom:16px; display:none;
+  }
+  .alert.show{ display:block; }
+  .alert.error{ background:var(--bad-bg); color:#8E2E22; }
+  .alert.success{ background:var(--good-bg); color:#175C3E; }
+
+  .stub-label{ font-family:'Space Mono', monospace; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+  .stub-value{ font-family:'Space Mono', monospace; font-size:13.5px; font-weight:700; color:var(--ink); margin-bottom:18px; word-break:break-word; }
+  .barcode{ margin-top:auto; display:flex; gap:2px; align-items:flex-end; height:46px; padding-top:16px; }
+  .barcode span{ display:block; width:3px; background:var(--ink); }
+
+  /* confirmation state */
+  .confirm{ display:none; }
+  .confirm.show{ display:block; }
+  .confirm-icon{
+    width:52px;height:52px;border-radius:50%; background:var(--good-bg); color:var(--good);
+    display:flex;align-items:center;justify-content:center; font-size:24px; margin-bottom:16px;
+  }
+  .confirm p{ color:var(--muted); font-size:13.5px; line-height:1.5; margin:0 0 20px; }
+  .confirm-row{ display:flex; justify-content:space-between; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .confirm-row:last-of-type{ border-bottom:none; }
+  .confirm-row .k{ color:var(--muted); }
+  .confirm-row .v{ font-weight:600; text-align:right; font-family:'Space Mono', monospace; }
+  .again-btn{ margin-top:20px; }
+
+  /* registration result cards (find tab) */
+  .reg-card{
+    border:1.5px solid var(--line); border-radius:12px; padding:16px;
+    margin-bottom:12px;
+  }
+  .reg-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:10px; }
+  .reg-event{ font-weight:700; font-size:14.5px; }
+  .reg-id{ font-family:'Space Mono', monospace; font-size:11.5px; color:var(--muted); margin-top:3px; }
+  .reg-actions{ display:flex; gap:8px; margin-top:10px; }
+
+  .api-note{ margin-top:22px; color:#7C8AA3; font-size:11.5px; font-family:'Space Mono', monospace; text-align:center; }
+  .api-note a{ color:#A9B8D6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow"><span class="dot"></span> LIVE API · AWS SERVERLESS</div>
+  <h1>Event Ticketing</h1>
+  <p class="sub">Register for an event, look up a ticket by email, or cancel a registration — every action here calls the live deployed API directly.</p>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="register">Register</button>
+    <button class="tab-btn" data-tab="find">Find my ticket</button>
+    <button class="tab-btn" data-tab="cancel">Cancel a registration</button>
+  </div>
+
+  <!-- ===================== REGISTER PANEL ===================== -->
+  <div class="panel active" id="panel-register">
+    <div class="main">
+      <div id="formState">
+        <div class="kicker">Step 1</div>
+        <h2>Choose an event</h2>
+        <p class="hint">Live from <code>GET /events</code></p>
+        <div id="eventsList" class="events"><div class="loading-events">Loading events…</div></div>
+
+        <div class="kicker">Step 2</div>
+        <h2>Your details</h2>
+        <p class="hint">We'll only use this to confirm your registration.</p>
+
+        <div id="formAlert" class="alert error"></div>
+
+        <form id="regForm" novalidate>
+          <div class="field">
+            <label for="name">Full name</label>
+            <input type="text" id="name" placeholder="e.g. Ama Owusu" autocomplete="name" />
+            <div class="field-error" id="nameError">Enter your full name.</div>
+          </div>
+          <div class="field">
+            <label for="email">Email address</label>
+            <input type="email" id="email" placeholder="you@example.com" autocomplete="email" />
+            <div class="field-error" id="emailError">Enter a valid email address.</div>
+          </div>
+          <button type="submit" class="btn" id="submitBtn">Get my ticket</button>
+        </form>
+      </div>
+
+      <div id="confirmState" class="confirm">
+        <div class="confirm-icon">✓</div>
+        <h2>You're registered</h2>
+        <p>A confirmation has been recorded for this event. Keep the reference below — you can cancel later from the "Cancel a registration" tab.</p>
+        <div class="confirm-row"><span class="k">Event</span><span class="v" id="cEvent">—</span></div>
+        <div class="confirm-row"><span class="k">Name</span><span class="v" id="cName">—</span></div>
+        <div class="confirm-row"><span class="k">Email</span><span class="v" id="cEmail">—</span></div>
+        <div class="confirm-row"><span class="k">Registration ID</span><span class="v" id="cId">—</span></div>
+        <div class="confirm-row"><span class="k">Status</span><span class="v" id="cStatus">—</span></div>
+        <button class="btn btn-outline again-btn" id="againBtn">Register another attendee</button>
+      </div>
+    </div>
+    <div class="stub">
+      <div class="stub-label">Event</div><div class="stub-value" id="stubEvent">Select an event</div>
+      <div class="stub-label">Date</div><div class="stub-value" id="stubDate">—</div>
+      <div class="stub-label">Location</div><div class="stub-value" id="stubLocation">—</div>
+      <div class="stub-label">Availability</div><div class="stub-value" id="stubStatus">—</div>
+      <div class="barcode" id="barcode"></div>
+    </div>
+  </div>
+
+  <!-- ===================== FIND PANEL ===================== -->
+  <div class="panel" id="panel-find">
+    <div class="main" style="grid-column: 1 / -1;">
+      <div class="kicker">Look up</div>
+      <h2>Find your registrations</h2>
+      <p class="hint">Live from <code>GET /registrations/{email}</code></p>
+
+      <div id="findAlert" class="alert error"></div>
+
+      <form id="findForm" novalidate style="display:flex; gap:10px; align-items:flex-start; margin-bottom:22px;">
+        <div class="field" style="flex:1; margin-bottom:0;">
+          <label for="findEmail">Email address</label>
+          <input type="email" id="findEmail" placeholder="you@example.com" autocomplete="email" />
+          <div class="field-error" id="findEmailError">Enter a valid email address.</div>
+        </div>
+        <button type="submit" class="btn" id="findBtn" style="width:auto; margin-top:24px;">Search</button>
+      </form>
+
+      <div id="findResults"></div>
+    </div>
+  </div>
+
+  <!-- ===================== CANCEL PANEL ===================== -->
+  <div class="panel" id="panel-cancel">
+    <div class="main" style="grid-column: 1 / -1;">
+      <div class="kicker">Cancel</div>
+      <h2>Cancel a registration</h2>
+      <p class="hint">Live from <code>DELETE /registration/{id}</code> — paste a registration ID, or find it first via "Find my ticket."</p>
+
+      <div id="cancelAlert" class="alert error"></div>
+      <div id="cancelSuccess" class="alert success"></div>
+
+      <form id="cancelForm" novalidate style="display:flex; gap:10px; align-items:flex-start;">
+        <div class="field" style="flex:1; margin-bottom:0;">
+          <label for="cancelId">Registration ID</label>
+          <input type="text" id="cancelId" placeholder="e.g. 8f14e45f-...-e4b8" autocomplete="off" />
+          <div class="field-error" id="cancelIdError">Enter a registration ID.</div>
+        </div>
+        <button type="submit" class="btn btn-danger" id="cancelBtn" style="width:auto; margin-top:24px;">Cancel ticket</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="api-note">
+    api base: https://xqga6ovdbb.execute-api.us-east-1.amazonaws.com/dev &nbsp;·&nbsp;
+    <a href="https://github.com/Ella-123-art/event-ticketing-system" target="_blank" rel="noopener">source on GitHub</a>
+  </div>
+</div>
+
+<script>
+const API_BASE = "https://xqga6ovdbb.execute-api.us-east-1.amazonaws.com/dev";
+
+function escapeHtml(str){
+  const d = document.createElement("div");
+  d.textContent = String(str == null ? "" : str);
+  return d.innerHTML;
+}
+function statusLabel(s){
+  const map = { AVAILABLE:"Available", LIMITED:"Limited", SOLD_OUT:"Sold out", CONFIRMED:"Confirmed", CANCELLED:"Cancelled" };
+  return map[s] || s || "Unknown";
+}
+async function parseJsonResponse(res){
+  const raw = await res.json().catch(() => ({}));
+  let data = raw;
+  if(typeof raw === "string"){ try{ data = JSON.parse(raw); }catch(e){} }
+  if(data && typeof data.body === "string"){ try{ data = JSON.parse(data.body); }catch(e){} }
+  return data;
+}
+
+/* ---------------- Tabs ---------------- */
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+  });
+});
+
+/* ---------------- REGISTER TAB ---------------- */
+const eventsListEl = document.getElementById("eventsList");
+const stubEvent = document.getElementById("stubEvent");
+const stubDate = document.getElementById("stubDate");
+const stubLocation = document.getElementById("stubLocation");
+const stubStatus = document.getElementById("stubStatus");
+const barcode = document.getElementById("barcode");
+const formAlert = document.getElementById("formAlert");
+const regForm = document.getElementById("regForm");
+const submitBtn = document.getElementById("submitBtn");
+const nameInput = document.getElementById("name");
+const emailInput = document.getElementById("email");
+const nameError = document.getElementById("nameError");
+const emailError = document.getElementById("emailError");
+const formState = document.getElementById("formState");
+const confirmState = document.getElementById("confirmState");
+const againBtn = document.getElementById("againBtn");
+
+let selectedEvent = null;
+let events = [];
+
+function renderBarcode(seed){
+  barcode.innerHTML = "";
+  const str = seed || "0000000000";
+  for(let i=0;i<38;i++){
+    const c = str.charCodeAt(i % str.length) || 65;
+    const h = 10 + (c % 36);
+    const bar = document.createElement("span");
+    bar.style.height = h + "px";
+    barcode.appendChild(bar);
+  }
+}
+renderBarcode("select-an-event");
+
+function selectEvent(ev, cardEl){
+  selectedEvent = ev;
+  document.querySelectorAll("#eventsList .event-card").forEach(c => c.classList.remove("selected"));
+  if(cardEl) cardEl.classList.add("selected");
+  stubEvent.textContent = ev.name || ev.eventId;
+  stubDate.textContent = ev.date || "TBD";
+  stubLocation.textContent = ev.location || "TBD";
+  stubStatus.textContent = statusLabel(ev.status);
+  renderBarcode(ev.eventId || ev.name || "event");
+}
+
+async function loadEvents(){
+  try{
+    const res = await fetch(`${API_BASE}/events`);
+    if(!res.ok) throw new Error("Request failed with status " + res.status);
+    const data = await parseJsonResponse(res);
+    console.log("GET /events raw response:", data);
+    events = Array.isArray(data) ? data : (data.events || data.items || data.Items || data.Events || []);
+
+    if(!events.length){
+      eventsListEl.innerHTML = `<div class="empty-events">No events came back from the API. Open the console (F12) to see the raw response, or seed sample events with <code>python scripts/seed_events.py &lt;table-name&gt; --region us-east-1</code>.</div>`;
+      return;
+    }
+
+    eventsListEl.innerHTML = "";
+    events.forEach((ev, idx) => {
+      const card = document.createElement("label");
+      card.className = "event-card";
+      const soldOut = ev.status === "SOLD_OUT";
+      card.innerHTML = `
+        <input type="radio" name="eventChoice" value="${ev.eventId || idx}" ${soldOut ? "disabled" : ""}/>
+        <div class="event-main">
+          <div class="event-name">${escapeHtml(ev.name || ev.eventId || "Untitled event")}</div>
+          <div class="event-meta">${escapeHtml(ev.date || "Date TBD")} · ${escapeHtml(ev.location || "Location TBD")}</div>
+        </div>
+        <div class="status-pill status-${ev.status || "AVAILABLE"}">${statusLabel(ev.status)}</div>
+      `;
+      if(!soldOut){
+        card.addEventListener("click", () => selectEvent(ev, card));
+      } else {
+        card.style.opacity = "0.55";
+        card.style.cursor = "not-allowed";
+      }
+      eventsListEl.appendChild(card);
+    });
+
+    const firstAvailable = events.find(e => e.status !== "SOLD_OUT");
+    if(firstAvailable){
+      const cards = eventsListEl.querySelectorAll(".event-card");
+      const idx = events.indexOf(firstAvailable);
+      cards[idx].querySelector("input").checked = true;
+      selectEvent(firstAvailable, cards[idx]);
+    }
+  } catch(err){
+    console.error("Failed to load events:", err);
+    eventsListEl.innerHTML = `<div class="empty-events">Couldn't load events from the API right now (${escapeHtml(err.message)}). Check the console (F12) — this is often CORS or a WAF/network block.</div>`;
+  }
+}
+
+function validateRegisterForm(){
+  let ok = true;
+  const name = nameInput.value.trim();
+  const email = emailInput.value.trim();
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  if(name.length < 2){ nameInput.classList.add("invalid"); nameError.classList.add("show"); ok = false; }
+  else { nameInput.classList.remove("invalid"); nameError.classList.remove("show"); }
+
+  if(!emailOk){ emailInput.classList.add("invalid"); emailError.classList.add("show"); ok = false; }
+  else { emailInput.classList.remove("invalid"); emailError.classList.remove("show"); }
+
+  if(!selectedEvent){ showAlert(formAlert, "Choose an event before registering."); ok = false; }
+
+  return ok;
+}
+function showAlert(el, msg){ el.textContent = msg; el.classList.add("show"); }
+function hideAlert(el){ el.classList.remove("show"); }
+
+regForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  hideAlert(formAlert);
+  if(!validateRegisterForm()) return;
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Registering…";
+
+  const payload = { eventId: selectedEvent.eventId, name: nameInput.value.trim(), email: emailInput.value.trim() };
+
+  try{
+    const res = await fetch(`${API_BASE}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await parseJsonResponse(res);
+
+    if(!res.ok){
+      showAlert(formAlert, (data && (data.message || data.error)) || `Registration failed (status ${res.status}).`);
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Get my ticket";
+      return;
+    }
+
+    document.getElementById("cEvent").textContent = selectedEvent.name || selectedEvent.eventId;
+    document.getElementById("cName").textContent = payload.name;
+    document.getElementById("cEmail").textContent = payload.email;
+    document.getElementById("cId").textContent = data.registrationId || data.id || "—";
+    document.getElementById("cStatus").textContent = statusLabel(data.status || "CONFIRMED");
+
+    formState.style.display = "none";
+    confirmState.classList.add("show");
+  } catch(err){
+    showAlert(formAlert, "Couldn't reach the API — check your connection and try again.");
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Get my ticket";
+  }
+});
+
+againBtn.addEventListener("click", () => {
+  confirmState.classList.remove("show");
+  formState.style.display = "block";
+  regForm.reset();
+  nameInput.classList.remove("invalid"); emailInput.classList.remove("invalid");
+  nameError.classList.remove("show"); emailError.classList.remove("show");
+  hideAlert(formAlert);
+  submitBtn.disabled = false; submitBtn.textContent = "Get my ticket";
+  loadEvents();
+});
+
+loadEvents();
+
+/* ---------------- FIND TAB ---------------- */
+const findForm = document.getElementById("findForm");
+const findEmail = document.getElementById("findEmail");
+const findEmailError = document.getElementById("findEmailError");
+const findAlert = document.getElementById("findAlert");
+const findBtn = document.getElementById("findBtn");
+const findResults = document.getElementById("findResults");
+
+findForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  hideAlert(findAlert);
+  findResults.innerHTML = "";
+
+  const email = findEmail.value.trim();
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if(!emailOk){
+    findEmail.classList.add("invalid");
+    findEmailError.classList.add("show");
+    return;
+  }
+  findEmail.classList.remove("invalid");
+  findEmailError.classList.remove("show");
+
+  findBtn.disabled = true;
+  findBtn.textContent = "Searching…";
+
+  try{
+    const res = await fetch(`${API_BASE}/registrations/${encodeURIComponent(email)}`);
+    const data = await parseJsonResponse(res);
+    console.log("GET /registrations/{email} raw response:", data);
+
+    if(!res.ok){
+      showAlert(findAlert, (data && (data.message || data.error)) || `Lookup failed (status ${res.status}).`);
+      return;
+    }
+
+    const regs = Array.isArray(data) ? data : (data.registrations || data.items || data.Items || []);
+
+    if(!regs.length){
+      findResults.innerHTML = `<div class="empty-events">No registrations found for that email.</div>`;
+      return;
+    }
+
+    findResults.innerHTML = "";
+    regs.forEach(r => {
+      const card = document.createElement("div");
+      card.className = "reg-card";
+      const id = r.registrationId || r.id || "";
+      const cancelled = r.status === "CANCELLED";
+      card.innerHTML = `
+        <div class="reg-top">
+          <div>
+            <div class="reg-event">${escapeHtml(r.eventName || r.eventId || "Event")}</div>
+            <div class="reg-id">ID: ${escapeHtml(id)}</div>
+          </div>
+          <div class="status-pill status-${r.status || "CONFIRMED"}">${statusLabel(r.status)}</div>
+        </div>
+        <div class="reg-actions"></div>
+      `;
+      if(!cancelled && id){
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "btn btn-outline btn-sm";
+        cancelBtn.textContent = "Cancel this ticket";
+        cancelBtn.addEventListener("click", () => {
+          document.querySelector('.tab-btn[data-tab="cancel"]').click();
+          document.getElementById("cancelId").value = id;
+        });
+        card.querySelector(".reg-actions").appendChild(cancelBtn);
+      }
+      findResults.appendChild(card);
+    });
+  } catch(err){
+    console.error("Failed to look up registrations:", err);
+    showAlert(findAlert, "Couldn't reach the API — check your connection and try again.");
+  } finally {
+    findBtn.disabled = false;
+    findBtn.textContent = "Search";
+  }
+});
+
+/* ---------------- CANCEL TAB ---------------- */
+const cancelForm = document.getElementById("cancelForm");
+const cancelId = document.getElementById("cancelId");
+const cancelIdError = document.getElementById("cancelIdError");
+const cancelAlert = document.getElementById("cancelAlert");
+const cancelSuccess = document.getElementById("cancelSuccess");
+const cancelBtn = document.getElementById("cancelBtn");
+
+cancelForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  hideAlert(cancelAlert);
+  hideAlert(cancelSuccess);
+
+  const id = cancelId.value.trim();
+  if(!id){
+    cancelId.classList.add("invalid");
+    cancelIdError.classList.add("show");
+    return;
+  }
+  cancelId.classList.remove("invalid");
+  cancelIdError.classList.remove("show");
+
+  cancelBtn.disabled = true;
+  cancelBtn.textContent = "Cancelling…";
+
+  try{
+    const res = await fetch(`${API_BASE}/registration/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const data = await parseJsonResponse(res);
+    console.log("DELETE /registration/{id} raw response:", data);
+
+    if(!res.ok){
+      showAlert(cancelAlert, (data && (data.message || data.error)) || `Cancellation failed (status ${res.status}).`);
+      return;
+    }
+
+    showAlert(cancelSuccess, "Registration cancelled successfully.");
+    cancelForm.reset();
+  } catch(err){
+    console.error("Failed to cancel registration:", err);
+    showAlert(cancelAlert, "Couldn't reach the API — check your connection and try again.");
+  } finally {
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = "Cancel ticket";
+  }
+});
+</script>
+</body>
+</html>
